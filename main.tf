@@ -49,91 +49,9 @@ resource "aws_instance" "jenkins" {
   key_name               = aws_key_pair.jenkins_key.key_name
   security_groups = [aws_security_group.jenkins_sg.name]
 
-  user_data = <<-EOF
-    #!/bin/bash
-    set -e
-
-    # Update & install dependencies
-    apt-get update -y
-    apt-get upgrade -y
-    apt-get install -y openjdk-11-jdk git curl
-
-    # Install Docker
-    apt-get install -y apt-transport-https ca-certificates curl gnupg lsb-release
-    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add -
-    add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu focal stable"
-    apt-get update -y
-    apt-get install -y docker-ce docker-ce-cli containerd.io
-    usermod -aG docker ubuntu
-
-    sudo wget -O /etc/apt/keyrings/jenkins-keyring.asc \
-    https://pkg.jenkins.io/debian-stable/jenkins.io-2023.key
-    echo "deb [signed-by=/etc/apt/keyrings/jenkins-keyring.asc]" \
-    https://pkg.jenkins.io/debian-stable binary/ | sudo tee \
-    /etc/apt/sources.list.d/jenkins.list > /dev/null
-    
-    sudo apt-get update
-    sudo apt-get install jenkins
-
-    # Start Jenkins
-    systemctl enable jenkins
-    systemctl start jenkins
-
-    # Wait for Jenkins to start
-    sleep 60
-
-    # Install Jenkins plugins via CLI
-    JENKINS_CLI=/tmp/jenkins-cli.jar
-    JENKINS_URL=http://localhost:8080
-    ADMIN_PASS=$(cat /var/lib/jenkins/secrets/initialAdminPassword)
-    wget $JENKINS_URL/jnlpJars/jenkins-cli.jar -O $JENKINS_CLI
-
-    # Install plugins
-    for plugin in ${join(" ", var.jenkins_plugins)}; do
-      java -jar $JENKINS_CLI -s $JENKINS_URL -auth admin:$ADMIN_PASS install-plugin $plugin
-    done
-
-    # Restart Jenkins to activate plugins
-    java -jar $JENKINS_CLI -s $JENKINS_URL -auth admin:$ADMIN_PASS safe-restart
-
-    # Clone GitHub repo
-    mkdir -p /var/lib/jenkins/jobs
-    git clone "${var.github_repo_url}" /var/lib/jenkins/jobs/clonedrepo
-
-    # Seed Jenkins pipeline job using CLI
-    JOB_CONFIG=/tmp/jenkins-job.xml
-    cat <<EOL > $JOB_CONFIG
-    <flow-definition plugin="workflow-job">
-      <description>Automated pipeline from ${var.github_repo_url}</description>
-      <keepDependencies>false</keepDependencies>
-      <properties/>
-      <definition class="org.jenkinsci.plugins.workflow.cps.CpsScmFlowDefinition" plugin="workflow-cps">
-        <scm class="hudson.plugins.git.GitSCM" plugin="git">
-          <configVersion>2</configVersion>
-          <userRemoteConfigs>
-            <hudson.plugins.git.UserRemoteConfig>
-              <url>${var.github_repo_url}</url>
-            </hudson.plugins.git.UserRemoteConfig>
-          </userRemoteConfigs>
-          <branches>
-            <hudson.plugins.git.BranchSpec>
-              <name>*/main</name>
-            </hudson.plugins.git.BranchSpec>
-          </branches>
-          <doGenerateSubmoduleConfigurations>false</doGenerateSubmoduleConfigurations>
-          <submoduleCfg class="list"/>
-          <extensions/>
-        </scm>
-        <scriptPath>Jenkinsfile</scriptPath>
-        <lightweight>true</lightweight>
-      </definition>
-      <triggers/>
-      <disabled>false</disabled>
-    </flow-definition>
-    EOL
-
-    java -jar $JENKINS_CLI -s $JENKINS_URL -auth admin:$ADMIN_PASS create-job my-pipeline < $JOB_CONFIG
-  EOF
+  user_data = templatefile("${path.module}/jenkins-install.sh.tpl", {
+              github_repo_url = var.github_repo_url
+            })
 
   tags = {
     Name    = "Jenkins-EC2"
