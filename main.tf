@@ -2,7 +2,6 @@
 resource "aws_security_group" "jenkins_sg" {
   name        = "jenkins-sg"
   description = "Allow SSH and Jenkins ports"
-  vpc_id      = data.aws_vpc.default.id
 
   ingress {
     description = "SSH"
@@ -43,22 +42,12 @@ resource "aws_security_group" "jenkins_sg" {
 }
 
 
-
-# Key Pair for SSH
-resource "tls_private_key" "jenkins_key" {
-  algorithm = "RSA"
-  rsa_bits  = 4096
-}
-resource "aws_key_pair" "jenkins_key" {
-  key_name   = "jenkins-key"
-  public_key = tls_private_key.jenkins_key.public_key_openssh
-}
-
 # EC2 Instance
 resource "aws_instance" "jenkins" {
   ami                    = "ami-0f918f7e67a3323f0"
   instance_type          = var.instance_type
   key_name               = aws_key_pair.jenkins_key.key_name
+  security_groups = [aws_security_group.jenkins_sg.name]
 
   user_data = <<-EOF
     #!/bin/bash
@@ -151,10 +140,7 @@ resource "aws_instance" "jenkins" {
     Project = "Terraform Jenkins Pipeline"
   }
 
-  # For SSH access via output
-  provisioner "local-exec" {
-    command = "echo '${tls_private_key.jenkins_key.private_key_pem}' > ./jenkins_key.pem && chmod 600 ./jenkins_key.pem"
-  }
+
 }
 
 # Output Jenkins URL

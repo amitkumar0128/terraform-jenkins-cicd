@@ -48,3 +48,18 @@ data "aws_vpc" "default" {
     sh -c 'echo deb https://pkg.jenkins.io/debian-stable binary/ > /etc/apt/sources.list.d/jenkins.list'
     apt-get update -y
     apt-get install -y jenkins
+
+# Key Pair for SSH
+resource "tls_private_key" "jenkins_key" {
+  algorithm = "RSA"
+  rsa_bits  = 4096
+}
+resource "aws_key_pair" "jenkins_key" {
+  key_name   = "jenkins-key"
+  public_key = tls_private_key.jenkins_key.public_key_openssh
+}
+
+  # For SSH access via output
+  provisioner "local-exec" {
+    command = "echo '${tls_private_key.jenkins_key.private_key_pem}' > ./jenkins_key.pem && chmod 600 ./jenkins_key.pem"
+  }
